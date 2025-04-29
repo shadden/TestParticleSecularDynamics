@@ -1,0 +1,4 @@
+forced_tps_integrate.sa
+tps_integrate.sa
+.ipynb_checkpoints/*
+*.pyc
