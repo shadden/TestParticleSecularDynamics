@@ -4,7 +4,7 @@ from celmech.disturbing_function import df_coefficient_C, evaluate_df_coefficien
 from celmech.poisson_series import PSTerm, PoissonSeries
 
 def list_multinomial_exponents(pwr,ndim):
-    """
+    r"""
     List exponents appearing in the expansion of the multinomial 
     
     .. math:: 
@@ -115,9 +115,53 @@ class SyntheticSecularTheory():
         self.y_dicts = y_dicts
         self.M_i = np.array([len(x_d) for x_d in x_dicts],dtype=int)
         self.N_i = np.array([len(y_d) for y_d in y_dicts],dtype=int)
+        self.m_ls = [list(x_d.keys()) for x_d in x_dicts]
+        self.n_ls = [list(y_d.keys()) for y_d in y_dicts]
         self.omega_vector = omega_vector
-        #self.m_il = np.array([m for m in self.x_dicts.keys()],dtype=int)
-        #self.n_il = np.array([m for m in self.x_dicts.keys()],dtype=int)
+    @property
+    def Nfreq(self):
+        return len(self.omega_vector)
+    
+    def Xi_to_pow_poisson_series(self,i,pow):
+        M_i = self.M_i[i]
+        x_dict = self.x_dicts[i]
+        m_ls = self.m_ls[i]
+        
+        pvec = np.zeros(self.Nfreq,dtype = int)
+        terms = []
+        for ks in list_multinomial_exponents(pow,M_i):
+            qvec = np.zeros(len(self.omega_vector),dtype = int)
+            coeff = multinomial_coefficient(pow,ks)
+            for m_l,k in zip(m_ls,ks):
+                if k>0:
+                    coeff *= (x_dict[m_l])**k
+                    qvec += k * np.array(m_l)
+            terms.append(PSTerm(coeff,[0],[0],pvec,qvec))
+        return PoissonSeries.from_PSTerms(terms)
+
+    def Yi_to_pow_poisson_series(self,i,pow):
+        N_i = self.N_i[i]
+        y_dict = self.y_dicts[i]
+        n_ls = self.n_ls[i]
+        
+        pvec = np.zeros(self.Nfreq,dtype = int)
+        terms = []
+        for ks in list_multinomial_exponents(pow,N_i):
+            qvec = np.zeros(len(self.omega_vector),dtype = int)
+            coeff = multinomial_coefficient(pow,ks)
+            for m_l,k in zip(n_ls,ks):
+                if k>0:
+                    coeff *= (y_dict[m_l])**k
+                    qvec += k * np.array(m_l)
+            terms.append(PSTerm(coeff,[0],[0],pvec,qvec))
+        return PoissonSeries.from_PSTerms(terms)
+
+    def Xbari_to_pow_poisson_series(self,i,pow):
+        return self.Xi_to_pow_poisson_series(i,pow).conj
+    
+    def Ybari_to_pow_poisson_series(self,i,pow):
+        return self.Yi_to_pow_poisson_series(i,pow).conj
+        
 from collections import defaultdict
 
 def mathcal_X_dictionary(semi_major_axis,synthetic_secular_theory,GM=1):
@@ -134,7 +178,7 @@ def mathcal_X_dictionary(semi_major_axis,synthetic_secular_theory,GM=1):
             C  = evaluate_df_coefficient_dict(C_e_mixed,a_i/semi_major_axis)
         x_dict = synthetic_secular_theory.x_dicts[i]
         for mvec,amplitude in x_dict.items():
-            Xcal_dict[mvec] = m_i*n*C*amplitude
+            Xcal_dict[mvec] += m_i*n*C*amplitude
     return Xcal_dict
 
 def mathcal_Y_dictionary(semi_major_axis,synthetic_secular_theory,GM=1):
@@ -151,7 +195,7 @@ def mathcal_Y_dictionary(semi_major_axis,synthetic_secular_theory,GM=1):
             C  = 0.5 * evaluate_df_coefficient_dict(C_I_mixed,a_i/semi_major_axis)
         y_dict = synthetic_secular_theory.y_dicts[i]
         for mvec,amplitude in y_dict.items():
-            Ycal_dict[mvec] = m_i*n*C*amplitude
+            Ycal_dict[mvec] += m_i*n*C*amplitude
     return Ycal_dict
 
 class TestParticleSecularHamiltonian():
@@ -190,7 +234,53 @@ class TestParticleSecularHamiltonian():
 
     @property
     def omega_vector(self):
-        return self.synthetic_secular_theory.omega_vector
+        return np.array(self.synthetic_secular_theory.omega_vector)
+    
+    @property
+    def M(self):
+        return len(self.F_e)
+    
+    @property
+    def N(self):
+        return len(self.F_inc)
+    
+    def x_to_pow_poisson_series(self,p):
+        exponents = list_multinomial_exponents(p,self.M+1)
+        mvecs = list(self.F_e.keys())
+        terms = []
+        for ks in exponents:
+            coeff = multinomial_coefficient(p,ks)
+            k0 = ks[0]
+            qvec = np.zeros(self.omega_vector.size,dtype = int)
+            pvec = np.zeros(self.omega_vector.size,dtype = int)
+            for k,m_l in zip(ks[1:],mvecs):
+                if k>0:
+                    coeff *= (self.F_e[m_l])**k
+                    qvec += k*np.array(m_l)
+            terms.append(PSTerm(coeff,[k0],[0],pvec,qvec))
+        return PoissonSeries.from_PSTerms(terms)
+    
+    def y_to_pow_poisson_series(self,p):
+        exponents = list_multinomial_exponents(p,self.N+1)
+        nvecs = list(self.F_inc.keys())
+        terms = []
+        for ks in exponents:
+            coeff = multinomial_coefficient(p,ks)
+            k0 = ks[0]
+            qvec = np.zeros(self.omega_vector.size,dtype = int)
+            pvec = np.zeros(self.omega_vector.size,dtype = int)
+            for k,n_l in zip(ks[1:],nvecs):
+                if k>0:
+                    coeff *= (self.F_inc[n_l])**k
+                    qvec += k*np.array(n_l)
+            terms.append(PSTerm(coeff,[k0],[0],pvec,qvec))
+        return PoissonSeries.from_PSTerms(terms)
+    
+    def xbar_to_pow_poisson_series(self,p):
+        return self.x_to_pow_poisson_series(p).conj
+    
+    def ybar_to_pow_poisson_series(self,p):
+        return self.y_to_pow_poisson_series(p).conj
 
     def linear_theory_solution(self,x0,y0,times):
         xForced = np.sum([amp * np.exp(1j * np.dot(m,self.omega_vector) * times) for m, amp in self.F_e.items()],axis=0)            
