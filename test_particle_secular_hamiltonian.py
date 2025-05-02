@@ -83,27 +83,6 @@ def calc_g0_and_s0(semi_major_axis,synthetic_secular_theory,GM=1.0):
     g0 *= 2*n
     s0 *= 0.5*n
     return g0,s0
-_p  = lambda k,nu: max(0,k) + nu
-_p1 = lambda k,nu: max(0,-k) + nu 
-_RT2 = np.sqrt(2)
-
-def test_particle_secular_terms(a,k,nu,synthetic_scular_system):
-    C_coeff = df_coefficient_C(k,nu)
-    for i in range(synthetic_scular_system.N_planets):
-        a_i = synthetic_scular_system.semi_major_axes[i]
-        if a<a_i:
-            alpha = a/a_i
-            C_i = evaluate_df_coefficient_dict(C_coeff,alpha)
-            pow_2_factor = _RT2**(2*nu[2]-2*nu[0] + np.abs(k[2])-np.abs(k[0]))
-            X_i_pow = _p(k[3],nu[3])
-            Xbar_i_pow = _p1(k[3],nu[3])
-            Y_i_pow = _p(k[5],nu[1])
-            Ybar_i_pow = _p1(k[5],nu[1])
-            
-            X_i_series_terms=[]
-            for pows in list_multinomial_exponents(X_i_pow,synthetic_scular_system.M_i[i]):
-                coeff = multinomial_coefficient(X_i_pow,pows)
-
     
 class SyntheticSecularTheory():
     def __init__(self,masses,semi_major_axes,omega_vector,x_dicts,y_dicts):
@@ -123,6 +102,8 @@ class SyntheticSecularTheory():
         return len(self.omega_vector)
     
     def Xi_to_pow_poisson_series(self,i,pow):
+        if pow==0:
+            return PSTerm(1,[0,0],[0,0],[0 for _ in range(self.N_freq)],[0 for _ in range(self.N_freq)]).as_series()
         M_i = self.M_i[i]
         x_dict = self.x_dicts[i]
         m_ls = self.m_ls[i]
@@ -140,6 +121,8 @@ class SyntheticSecularTheory():
         return PoissonSeries.from_PSTerms(terms)
 
     def Yi_to_pow_poisson_series(self,i,pow):
+        if pow==0:
+            return PSTerm(1,[0,0],[0,0],[0 for _ in range(self.N_freq)],[0 for _ in range(self.N_freq)]).as_series()
         N_i = self.N_i[i]
         y_dict = self.y_dicts[i]
         n_ls = self.n_ls[i]
@@ -213,6 +196,7 @@ class TestParticleSecularHamiltonian():
             Newton's constant times the stellar mass, by default 1.0
         """
         self.semi_major_axis = semi_major_axis
+        self.n = np.sqrt(GM / semi_major_axis**3)
         self.synthetic_secular_theory = synthetic_secular_theory
         self.g0,self.s0 = calc_g0_and_s0(semi_major_axis,synthetic_secular_theory,GM=GM)
         mathcal_X_dict = mathcal_X_dictionary(semi_major_axis,synthetic_secular_theory)
@@ -232,6 +216,26 @@ class TestParticleSecularHamiltonian():
             denom = self.s0 - omega_m
             self.F_inc[m] = -1*amp / denom
 
+    def H2_poisson_series(self):
+        N_freq = self.synthetic_secular_theory.N_freq
+        zeroN = np.zeros(N_freq,dtype=int)
+        eyeN = np.eye(N_freq,dtype=int) 
+        h2_series_terms = []# PoissonSeries(2,N_freq)
+        h2_series_terms.append(PSTerm(self.g0,[1,0],[1,0],zeroN,zeroN))
+        h2_series_terms.append(PSTerm(self.s0,[0,1],[0,1],zeroN,zeroN))
+        for omega_i,o_i in zip(self.omega_vector,eyeN):
+            h2_series_terms.append(PSTerm(omega_i,[0,0],[0,0],o_i,zeroN))
+        return PoissonSeries.from_PSTerms(h2_series_terms)
+
+    def Xi_to_pow_poisson_series(self,i,p):
+        return self.synthetic_secular_theory.Xi_to_pow_poisson_series(i,p)
+    def Xbari_to_pow_poisson_series(self,i,p):
+        return self.synthetic_secular_theory.Xbari_to_pow_poisson_series(i,p)
+    def Yi_to_pow_poisson_series(self,i,p):
+        return self.synthetic_secular_theory.Yi_to_pow_poisson_series(i,p)
+    def Ybari_to_pow_poisson_series(self,i,p):
+        return self.synthetic_secular_theory.Ybari_to_pow_poisson_series(i,p)
+    
     @property
     def omega_vector(self):
         return np.array(self.synthetic_secular_theory.omega_vector)
@@ -243,6 +247,66 @@ class TestParticleSecularHamiltonian():
     @property
     def N(self):
         return len(self.F_inc)
+    
+    def _DFTerm_poisson_series_inner_perturber(self,alpha,i,k,nu):
+        _p  = lambda k,nu: max(0,k) + nu
+        _p1 = lambda k,nu: max(0,-k) + nu 
+        m_i = self.synthetic_secular_theory.masses[i]
+        C = evaluate_df_coefficient_dict(df_coefficient_C(*k,*nu),alpha)
+        _,_,k3,k4,k5,k6 = k
+        nu1,nu2,nu3,nu4 = nu
+        factor = (0.5)**(2*nu2+abs(k6)) * m_i * self.n * C
+
+        xpow_series = self.x_to_pow_poisson_series(_p(k4,nu4))
+        xbar_pow_series = self.xbar_to_pow_poisson_series(_p1(k4,nu4))
+
+        Xi_pow_series = self.Xi_to_pow_poisson_series(i,_p(k3,nu3))
+        Xbari_pow_series = self.Xbari_to_pow_poisson_series(i,_p1(k3,nu3))
+
+        ypow_series = self.y_to_pow_poisson_series(_p(k6,nu2))
+        ybar_pow_series = self.ybar_to_pow_poisson_series(_p1(k6,nu2))
+
+        Yi_pow_series = self.Yi_to_pow_poisson_series(i,_p(k5,nu1))
+        Ybari_pow_series = self.Ybari_to_pow_poisson_series(i,_p1(k5,nu1))
+
+        series = xpow_series * xbar_pow_series * Xi_pow_series * Xbari_pow_series * ypow_series * ybar_pow_series * Yi_pow_series * Ybari_pow_series
+        series *= factor
+        return series + series.conj
+
+    def _DFTerm_poisson_series_outer_perturber(self,alpha,i,k,nu):
+        _p  = lambda k,nu: max(0,k) + nu
+        _p1 = lambda k,nu: max(0,-k) + nu 
+        m_i = self.synthetic_secular_theory.masses[i]
+        C = evaluate_df_coefficient_dict(df_coefficient_C(*k,*nu),alpha)
+        _,_,k3,k4,k5,k6 = k
+        nu1,nu2,nu3,nu4 = nu
+        factor = (0.5)**(2*nu1+abs(k5)) * alpha * m_i * self.n * C
+
+        xpow_series = self.x_to_pow_poisson_series(_p(k3,nu3))
+        xbar_pow_series = self.xbar_to_pow_poisson_series(_p1(k3,nu3))
+
+        Xi_pow_series = self.Xi_to_pow_poisson_series(i, _p(k4,nu4))
+        Xbari_pow_series = self.Xbari_to_pow_poisson_series(i, _p1(k4,nu4))
+
+        ypow_series = self.y_to_pow_poisson_series(_p(k5,nu1))
+        ybar_pow_series = self.ybar_to_pow_poisson_series(_p1(k5,nu1))
+
+        Yi_pow_series = self.Yi_to_pow_poisson_series(i,_p(k6,nu2))
+        Ybari_pow_series = self.Ybari_to_pow_poisson_series(i,_p1(k6,nu2))
+
+        series = xpow_series * xbar_pow_series * Xi_pow_series * Xbari_pow_series * ypow_series * ybar_pow_series * Yi_pow_series * Ybari_pow_series
+        series*= factor
+        return series + series.conj
+
+    def DFTerm_poisson_series(self,i,k,nu):
+        a_i = self.synthetic_secular_theory.semi_major_axes[i]
+        if a_i<self.semi_major_axis:
+            alpha = a_i / self.semi_major_axis
+            series = self._DFTerm_poisson_series_inner_perturber(alpha,i,k,nu)
+        else:
+            alpha = self.semi_major_axis/a_i
+            series = self._DFTerm_poisson_series_outer_perturber(alpha,i,k,nu)
+        return series
     
     def x_to_pow_poisson_series(self,p):
         exponents = list_multinomial_exponents(p,self.M+1)
@@ -257,7 +321,7 @@ class TestParticleSecularHamiltonian():
                 if k>0:
                     coeff *= (self.F_e[m_l])**k
                     qvec += k*np.array(m_l)
-            terms.append(PSTerm(coeff,[k0],[0],pvec,qvec))
+            terms.append(PSTerm(coeff,[k0,0],[0,0],pvec,qvec))
         return PoissonSeries.from_PSTerms(terms)
     
     def y_to_pow_poisson_series(self,p):
@@ -273,7 +337,7 @@ class TestParticleSecularHamiltonian():
                 if k>0:
                     coeff *= (self.F_inc[n_l])**k
                     qvec += k*np.array(n_l)
-            terms.append(PSTerm(coeff,[k0],[0],pvec,qvec))
+            terms.append(PSTerm(coeff,[0,k0],[0,0],pvec,qvec))
         return PoissonSeries.from_PSTerms(terms)
     
     def xbar_to_pow_poisson_series(self,p):
