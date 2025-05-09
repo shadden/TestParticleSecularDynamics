@@ -182,7 +182,9 @@ def mathcal_Y_dictionary(semi_major_axis,synthetic_secular_theory,GM=1):
         for mvec,amplitude in y_dict.items():
             Ycal_dict[mvec] += -m_i*n*C*amplitude
     return Ycal_dict
-
+from collections import defaultdict
+from warnings import warn
+from celmech.poisson_series import PoissonSeriesHamiltonian
 class TestParticleSecularHamiltonian():
     def __init__(self,semi_major_axis,synthetic_secular_theory,GM=1.0):
         """
@@ -205,19 +207,59 @@ class TestParticleSecularHamiltonian():
         mathcal_Y_dict = mathcal_Y_dictionary(semi_major_axis,synthetic_secular_theory)
 
         # Get forced eccentricity
-        self.F_e = dict()
+        self.F_e = defaultdict(complex)
         for m,amp in mathcal_X_dict.items():
             omega_m = np.dot(m,self.omega_vector)
             denom = self.g0 - omega_m
-            self.F_e[m] = amp / denom
+            self.F_e[m] += amp / denom
 
         # Get forced inclination
-        self.F_inc = dict()
+        self.F_inc = defaultdict(complex)
         for m,amp in mathcal_Y_dict.items():
             omega_m = np.dot(m,self.omega_vector)
             denom = self.s0 - omega_m
-            self.F_inc[m] = amp / denom
+            self.F_inc[m] += amp / denom
 
+        self._mmr_corrections  = []
+    def _update_linear_theory_with_second_order_in_mass_terms(self,perturber_resonances_dict):
+        second_order_terms = PoissonSeries(2,self.N_freq)
+        zero_N = [0 for _ in range(self.N_freq)]
+        for planet_id,resonance_jk_list in perturber_resonances_dict.items():
+            for j,k in resonance_jk_list:
+                if (planet_id,j,k) in self._mmr_corrections:
+                    warn("" \
+                    "A correction for planet {}'s {}:{} MMR has already been inculded in the linear secular theory. " \
+                    "This correction will be skipped".format(planet_id,j,k)
+                    )
+                    continue
+                second_order_terms+=self.MMR_second_order_mass_terms(planet_id,j,k,max_order=2)
+        dg_key = second_order_terms._PSTerm_to_key(PSTerm(1,[1,0],[1,0],zero_N, zero_N))
+        ds_key = second_order_terms._PSTerm_to_key(PSTerm(1,[0,1],[0,1],zero_N, zero_N))
+
+        dg = -1*second_order_terms._terms_dict.pop(dg_key,0)
+        ds = -1*second_order_terms._terms_dict.pop(ds_key,0)
+        dF_e = dict()
+        dF_inc = dict()
+        for term in second_order_terms.terms:
+            if np.all(term.kbar==np.array([1,0])):
+                m = term.q
+                omega_m = np.dot(m,self.omega_vector)
+                dF_e[tuple(m)] = term.C / (self.g0 + dg - omega_m)
+            if np.all(term.kbar==np.array([0,1])):
+                m = term.q
+                omega_m = np.dot(m,self.omega_vector)
+                dF_inc[tuple(m)] = term.C / (self.s0 + ds - omega_m)
+        self.g0 += dg
+        self.s0 += ds
+        for m,amp in dF_e.items():
+            self.F_e[m]+=amp
+        for m,amp in dF_inc.items():
+            self.F_inc[m]+=amp
+
+        #return dg,ds,dF_e,dF_inc
+
+
+        
     def H2_poisson_series(self):
         N_freq = self.synthetic_secular_theory.N_freq
         zeroN = np.zeros(N_freq,dtype=int)
@@ -302,6 +344,7 @@ class TestParticleSecularHamiltonian():
         terms = PoissonSeries(2,self.N_freq)
         angle_only_term  = lambda u: (np.all(u.k==0) and np.all(u.kbar==0))
         for kv in Pk_dict.keys():
+            print(kv)
             k,k_p = kv
             Pk = Pk_dict[kv]
             dPk_ddelta =  dPk_ddelta_dict[kv]
@@ -311,15 +354,17 @@ class TestParticleSecularHamiltonian():
             term = (1j/omega)*bracket(Pk,Pk.conj) + (-0.5*k/omega) * d_absPk_sq_ddelta + (-1.5*self.n*k*k/omega/omega)*abs_Pk_sq
             # clip terms that only depend on angles
             term = PoissonSeries.from_PSTerms([x for x in term.terms if not angle_only_term(x)])
-            terms+=2*self.n*self.n*m_i*m_i*term
-        return terms + terms.conj,Pk
+            terms+=0.5*self.n*self.n*m_i*m_i*term
+        return terms + terms.conj
     
-    def _second_order_mass_terms_outer_perturber(self,alpha,i,j,k,max_order = None):
+    def _second_order_mass_terms_outer_perturber(self,i,j,k,max_order = None):
         resonance_terms = list_resonance_terms(j,k,max_order = max_order)
         m_i = self.synthetic_secular_theory.masses[i]
-        Pk_dict = defaultdict(lambda: PoissonSeries(2,self.M))
-        dPk_ddelta_dict = defaultdict(lambda: PoissonSeries(2,self.M))
-        nvec = self.n * np.array((1,alpha**(-1.5)))
+        a_i = self.synthetic_secular_theory.semi_major_axes[i]
+        alpha = self.semi_major_axis / a_i 
+        Pk_dict = defaultdict(lambda: PoissonSeries(2,self.N_freq))
+        dPk_ddelta_dict = defaultdict(lambda: PoissonSeries(2,self.N_freq))
+        nvec = self.n * np.array((1,alpha**(+1.5)))
         for k,nu in resonance_terms:
             k_p,k_tp,k3,k4,k5,k6 = k
             nu1,nu2,nu3,nu4 = nu
@@ -328,8 +373,21 @@ class TestParticleSecularHamiltonian():
             kvec = (k_tp,k_p)
             pseries = self._pows_to_series_outer_perturber(i,k3,k4,k5,k6,nu1,nu2,nu3,nu4)
             Pk_dict[kvec] += (0.5)**(2*nu1+abs(k5)) * C * pseries
-            dPk_ddelta_dict[kvec] += (0.5)**(2*nu2+abs(k6)) * dC_ddelta * pseries
-        return Pk_dict,dPk_ddelta_dict
+            dPk_ddelta_dict[kvec] += (0.5)**(2*nu1+abs(k5)) * dC_ddelta * pseries
+        terms = PoissonSeries(2,self.N_freq)
+        angle_only_term  = lambda u: (np.all(u.k==0) and np.all(u.kbar==0))
+        for kv in Pk_dict.keys():
+            k,k_p = kv
+            Pk = Pk_dict[kv]
+            dPk_ddelta =  dPk_ddelta_dict[kv]
+            omega = np.dot(kv,nvec)
+            abs_Pk_sq = Pk*Pk.conj
+            d_absPk_sq_ddelta = (Pk*dPk_ddelta.conj + Pk.conj*dPk_ddelta)
+            term = (1j/omega)*bracket(Pk,Pk.conj) + (-0.5*k/omega) * d_absPk_sq_ddelta + (-1.5*self.n*k*k/omega/omega)*abs_Pk_sq
+            # clip terms that only depend on angles
+            term = PoissonSeries.from_PSTerms([x for x in term.terms if not angle_only_term(x)])
+            terms+=0.5*self.n*self.n*m_i*m_i*alpha*alpha*term
+        return terms + terms.conj
                 
     def _DFTerm_poisson_series_inner_perturber(self,alpha,i,k,nu):
         _p  = lambda k,nu: max(0,k) + nu
@@ -365,6 +423,14 @@ class TestParticleSecularHamiltonian():
             series = self._DFTerm_poisson_series_outer_perturber(alpha,i,k,nu)
         return series
     
+    def MMR_second_order_mass_terms(self,i,j,k,max_order = None):
+        a_i = self.synthetic_secular_theory.semi_major_axes[i]
+        if a_i<self.semi_major_axis:
+            series = self._second_order_mass_terms_inner_perturber(i,j,k,max_order)
+        else:
+            series = self._second_order_mass_terms_outer_perturber(i,j,k,max_order)
+        return series
+
     def x_to_pow_poisson_series(self,p):
         exponents = list_multinomial_exponents(p,self.M+1)
         mvecs = list(self.F_e.keys())
