@@ -148,6 +148,12 @@ class SyntheticSecularTheory():
         return self.Yi_to_pow_poisson_series(i,pow).conj
         
 from collections import defaultdict
+angle_only_term  = lambda term: (np.all(term.k==0) and np.all(term.kbar==0))
+def strip_angle_only_terms(series):
+    return PoissonSeries.from_PSTerms([term for term in series.terms if not angle_only_term(term)],series.N,series.M)
+def DAlembert_check(pseries):
+    char = np.array([np.sum(term.kbar - term.k) - np.sum(term.q) for term in strip_angle_only_terms(pseries).terms if term.C != 0])
+    return np.all(char==0)
 
 def mathcal_X_dictionary(semi_major_axis,synthetic_secular_theory,GM=1):
     n = np.sqrt(GM / semi_major_axis**3)
@@ -236,16 +242,16 @@ class TestParticleSecularHamiltonian():
         dg_key = second_order_terms._PSTerm_to_key(PSTerm(1,[1,0],[1,0],zero_N, zero_N))
         ds_key = second_order_terms._PSTerm_to_key(PSTerm(1,[0,1],[0,1],zero_N, zero_N))
 
-        dg = -1*second_order_terms._terms_dict.pop(dg_key,0)
-        ds = -1*second_order_terms._terms_dict.pop(ds_key,0)
+        dg = np.real(-1*second_order_terms._terms_dict.pop(dg_key,0))
+        ds = np.real(-1*second_order_terms._terms_dict.pop(ds_key,0))
         dF_e = dict()
         dF_inc = dict()
         for term in second_order_terms.terms:
-            if np.all(term.kbar==np.array([1,0])):
+            if np.all(term.kbar==np.array([1,0])) and np.all(term.k==0):
                 m = term.q
                 omega_m = np.dot(m,self.omega_vector)
                 dF_e[tuple(m)] = term.C / (self.g0 + dg - omega_m)
-            if np.all(term.kbar==np.array([0,1])):
+            if np.all(term.kbar==np.array([0,1])) and np.all(term.k==0):
                 m = term.q
                 omega_m = np.dot(m,self.omega_vector)
                 dF_inc[tuple(m)] = term.C / (self.s0 + ds - omega_m)
@@ -331,6 +337,7 @@ class TestParticleSecularHamiltonian():
         Pk_dict = defaultdict(lambda: PoissonSeries(2,self.N_freq))
         dPk_ddelta_dict = defaultdict(lambda: PoissonSeries(2,self.N_freq))
         nvec = self.n * np.array((1,alpha**(-1.5)))
+        Lambda0 = np.sqrt(self.semi_major_axis)
         for k,nu in resonance_terms:
             k_tp,k_p,k3,k4,k5,k6 = k
             nu1,nu2,nu3,nu4 = nu
@@ -344,14 +351,18 @@ class TestParticleSecularHamiltonian():
         terms = PoissonSeries(2,self.N_freq)
         angle_only_term  = lambda u: (np.all(u.k==0) and np.all(u.kbar==0))
         for kv in Pk_dict.keys():
-            print(kv)
             k,k_p = kv
             Pk = Pk_dict[kv]
             dPk_ddelta =  dPk_ddelta_dict[kv]
             omega = np.dot(kv,nvec)
             abs_Pk_sq = Pk*Pk.conj
+            # assert DAlembert_check(abs_Pk_sq), "'abs_Pk_sq' fails D'Alembert property check"
             d_absPk_sq_ddelta = (Pk*dPk_ddelta.conj + Pk.conj*dPk_ddelta)
-            term = (1j/omega)*bracket(Pk,Pk.conj) + (-0.5*k/omega) * d_absPk_sq_ddelta + (-1.5*self.n*k*k/omega/omega)*abs_Pk_sq
+            # assert DAlembert_check(d_absPk_sq_ddelta), "'d_absPk_sq_ddelta' fails D'Alembert property check"
+            bracket_Pk_Pkbar = bracket(Pk,Pk.conj) 
+            # assert DAlembert_check(bracket_Pk_Pkbar), "'bracket_Pk_Pkbar' fails D'Alembert property check"
+            term = (1j/omega)*bracket_Pk_Pkbar + (-0.5*k/omega) * d_absPk_sq_ddelta + (-1.5*self.n*k*k/omega/omega)*abs_Pk_sq
+            
             # clip terms that only depend on angles
             term = PoissonSeries.from_PSTerms([x for x in term.terms if not angle_only_term(x)])
             terms+=0.5*self.n*self.n*m_i*m_i*term
