@@ -72,7 +72,7 @@ for i,mass in enumerate(np.linspace(1e-6,0.45e-5,10)):
     sim_new.t = 0
     extras = rbx.Extras(sim_new)
     mod = extras.load_operator("modify_orbits_direct")
-    sim_new.particles[1].params['tau_omega'] = T_pl
+    sim.particles[1].params['tau_Omega'] = -1 * T_pl
     extras.add_operator(mod)
 
     Tint = 2e7
