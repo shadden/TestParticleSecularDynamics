@@ -259,20 +259,20 @@ def main():
     s0s_pred = np.array([tph.s0 for tph in test_particle_hamiltonians])
     s0s_obs = np.array([select_by_nearest_key(particle_fmft_results_inc[i],s0_pred)[0] for i,s0_pred in enumerate(s0s_pred)])
 
-    fig,axes = plt.subplots(4,2,sharex=True,figsize=(8,12))
+    fig,axes = plt.subplots(4,2,sharex=True,figsize=np.array((12,7)))
     for ax in axes.flatten():
         plt.sca(ax)
         plt.tick_params(axis='both', which='major', labelsize=10,size=8,direction='in',top=True,right=True)
 
     axes[0,0].plot(a0s,1e5*g0s_pred,'kx-',ms=10,lw=3)
-    axes[0,0].plot(a0s,1e5*g0s_obs,'o',ms=10)
+    axes[0,0].scatter(a0s,1e5*g0s_obs)
 
     axes[0,1].plot(a0s,1e5*s0s_pred,'kx-',ms=10,lw=3)
-    axes[0,1].plot(a0s,1e5*s0s_obs,'o',ms=10)
+    axes[0,1].scatter(a0s,1e5*s0s_obs)
 
     for i,ax in enumerate(axes[1:,0]):
         omega_target = synthetic_theory.omega_vector[i]
-        
+        ax.text(0.95,0.95,"$\\nu_{}={:.2f}$".format(i+5,omega_target / ARCSEC_PER_YR),ha='right',va='top',transform=ax.transAxes)
         e_nui_pred = [
             np.abs(tph.F_e[tuple(np.eye(synthetic_theory.N_freq,dtype=int)[i])])
             for tph in test_particle_hamiltonians
@@ -294,7 +294,7 @@ def main():
         ax.yaxis.tick_right()
 
         omega_target = synthetic_theory.omega_vector[4 + i]
-        print(omega_target)
+        ax.text(0.95,0.95,"$\\nu_{{1{}}}={:.2f}$".format(6+i,omega_target / ARCSEC_PER_YR),ha='right',va='top',transform=ax.transAxes)
         inc_nui_pred = [
             np.abs(tph.F_inc[tuple(np.eye(synthetic_theory.N_freq,dtype=int)[4+i])])
             for tph in test_particle_hamiltonians
@@ -314,7 +314,9 @@ def main():
     axes[0,1].set_ylabel("s0 [arcsec/yr]",fontsize=12)
     for i in range(1,4):
         axes[i,0].set_ylabel("e_nu_{}".format(4+i),fontsize=12)
-        axes[i,1].set_ylabel("i_nu_{}".format(4+i),fontsize=12)
+        axes[i,1].set_ylabel("i_nu_1{}".format(5+i),fontsize=12)
+    plt.tight_layout()
     plt.show()  
+
 if __name__=="__main__":
     main()

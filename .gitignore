@@ -5,3 +5,7 @@ tps_integrate.sa
 *.sa
 *.bin
 *.npz
+distant_extended.dat.gz
+*.gz
+*.pdf
+*.pkl
