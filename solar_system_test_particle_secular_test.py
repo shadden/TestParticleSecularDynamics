@@ -31,6 +31,9 @@ def select_by_nearest_key(d,val):
     return nearest_key,d[nearest_key]
 
 def setup_solar_system_integration(test_particle_semimajor_axes):
+    """
+    Set up a solar system integration with the Sun, Jupiter, Saturn, Uranus, Neptune, and test particles.
+    """
     sim = rb.Simulation()
     sim.add("Sun")
     for planet in ("Jupiter","Saturn","Uranus","Neptune"):
@@ -46,12 +49,41 @@ def setup_solar_system_integration(test_particle_semimajor_axes):
     return sim
 
 def run_and_save_simulation(sim, tmax, Nout, filename):
+    """
+    Run simulation and save to file.
+
+    Parameters
+    ----------
+    sim : rebound.Simulation
+        simulation to run
+    tmax : float
+        time to integrate to
+    Nout : int
+        number of outputs to save
+    filename : string
+        name of file to save simulation to.
+    """
     total_steps = tmax / sim.dt
     step = int(np.floor(total_steps / Nout))    
     sim.save_to_file(filename,step = step,delete_file=True)
     sim.integrate(tmax, exact_finish_time=0)
 
 def get_planets_fmft_results(results):
+    """
+    Get FMFT results for giant planets' complex inclinations and eccentricities.
+
+    Parameters
+    ----------
+    results : dictionary
+        dictionary of integration results as returned by celmech's get_simarchive_integration_results function.
+
+    Returns
+    -------
+    ecc_fmft_results : dictionary
+        A dictionary containing the eccentricity FMFT results for each planet.
+    inc_fmft_results : dictionary
+        A dictionary containing the inclination FMFT results for each planet.
+    """
     planets = ("Jupiter","Saturn","Uranus","Neptune")
 
     results['X'] = np.sqrt(2*(1-np.sqrt(1-results['e']**2))) * np.exp(1j * results['pomega'])
@@ -209,8 +241,6 @@ def main():
     print("Semimajor axes of the planets:", semimajor_axes)
     print("Number of planets:",synthetic_theory.N_planets)
     print("Omega vector:", synthetic_theory.omega_vector)
-    print("number of x dictionaries:", len(synthetic_theory.x_dicts))
-    print("number of y dictionaries:", len(synthetic_theory.y_dicts))
     
     particle_fmft_results_e = [
         fmft(results['time'],results['X'][i],6) for i in range(sim.N_active-1,sim.N-1)
@@ -262,7 +292,7 @@ def main():
         ax.yaxis.set_label_position("right")
         # 2. Move the tick marks and numeric labels to the right side
         ax.yaxis.tick_right()
-        
+
         omega_target = synthetic_theory.omega_vector[4 + i]
         print(omega_target)
         inc_nui_pred = [
