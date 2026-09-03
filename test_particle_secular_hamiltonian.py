@@ -329,8 +329,8 @@ class TestParticleSecularHamiltonian():
         series = xpow_series * xbar_pow_series * Xi_pow_series * Xbari_pow_series * ypow_series * ybar_pow_series * Yi_pow_series * Ybari_pow_series
         return series
     
-    def _second_order_mass_terms_inner_perturber(self,i,j,k,max_order = None):
-        resonance_terms = list_resonance_terms(j,k,max_order = max_order)
+    def _second_order_mass_terms_inner_perturber(self,i,j,k,max_order = None, eccentricities=True, inclinations=True):
+        resonance_terms = list_resonance_terms(j,k,max_order = max_order,eccentricities=eccentricities, inclinations=inclinations)
         m_i = self.synthetic_secular_theory.masses[i]
         a_i = self.synthetic_secular_theory.semi_major_axes[i]
         alpha = a_i / self.semi_major_axis
@@ -368,8 +368,8 @@ class TestParticleSecularHamiltonian():
             terms+=0.5*self.n*self.n*m_i*m_i*term
         return terms + terms.conj
     
-    def _second_order_mass_terms_outer_perturber(self,i,j,k,max_order = None):
-        resonance_terms = list_resonance_terms(j,k,max_order = max_order)
+    def _second_order_mass_terms_outer_perturber(self,i,j,k,max_order = None, eccentricities=True, inclinations=True):
+        resonance_terms = list_resonance_terms(j,k,max_order = max_order,eccentricities=eccentricities, inclinations=inclinations)
         m_i = self.synthetic_secular_theory.masses[i]
         a_i = self.synthetic_secular_theory.semi_major_axes[i]
         alpha = self.semi_major_axis / a_i 
@@ -434,12 +434,12 @@ class TestParticleSecularHamiltonian():
             series = self._DFTerm_poisson_series_outer_perturber(alpha,i,k,nu)
         return series
     
-    def MMR_second_order_mass_terms(self,i,j,k,max_order = None):
+    def MMR_second_order_mass_terms(self,i,j,k,max_order = None, eccentricities=True, inclinations=True):
         a_i = self.synthetic_secular_theory.semi_major_axes[i]
         if a_i<self.semi_major_axis:
-            series = self._second_order_mass_terms_inner_perturber(i,j,k,max_order)
+            series = self._second_order_mass_terms_inner_perturber(i,j,k,max_order, eccentricities, inclinations)
         else:
-            series = self._second_order_mass_terms_outer_perturber(i,j,k,max_order)
+            series = self._second_order_mass_terms_outer_perturber(i,j,k,max_order, eccentricities, inclinations)
         return series
 
     def x_to_pow_poisson_series(self,p):
@@ -488,3 +488,208 @@ class TestParticleSecularHamiltonian():
         x_soln = x0_free * np.exp(1j * self.g0 * times) + xForced
         y_soln = y0_free * np.exp(1j * self.s0 * times) + yForced
         return x_soln,y_soln
+from celmech.disturbing_function import list_secular_terms
+class SimpleTestParticleSecularHamiltonian():
+    def __init__(self,semi_major_axis,synthetic_secular_theory,GM=1.0):
+        """
+        Class representing the Hamiltonian of a test particle subject to secular forcing from a system of planets.
+        No transformation to forced and free elements is performed
+
+        Parameters
+        ----------
+        semi_major_axis : float
+            The test particle's semi-major axis
+        synthetic_secular_theory : SyntheticSecularTheory
+            A representation of the planetary system's secular dynamics.
+        GM : float, optional
+            Newton's constant times the stellar mass, by default 1.0
+        """
+        self.semi_major_axis = semi_major_axis
+        self.n = np.sqrt(GM / semi_major_axis**3)
+        self.synthetic_secular_theory = synthetic_secular_theory
+        self.g0,self.s0 = calc_g0_and_s0(semi_major_axis,synthetic_secular_theory,GM=GM)
+        mathcal_X_dict = mathcal_X_dictionary(semi_major_axis,synthetic_secular_theory)
+        mathcal_Y_dict = mathcal_Y_dictionary(semi_major_axis,synthetic_secular_theory)
+        
+    def h2_poisson_series(self):
+        N_freq = self.N_freq
+        zeroN = np.zeros(N_freq,dtype = int)
+        eyeN = np.eye(N_freq,dtype=int) 
+        h2_series_terms = []# PoissonSeries(2,N_freq)
+        for omega_i,o_i in zip(self.omega_vector,eyeN):
+            h2_series_terms.append(PSTerm(omega_i,[0,0],[0,0],o_i,zeroN))
+        h2_series = PoissonSeries.from_PSTerms(h2_series_terms)
+        for k,nu in list_secular_terms(2,2):
+            for i in range(self.synthetic_secular_theory.N_planets):
+                h2_series += self.DFTerm_poisson_series(i,k,nu)
+        return h2_series
+
+    def Xi_to_pow_poisson_series(self,i,p):
+        return self.synthetic_secular_theory.Xi_to_pow_poisson_series(i,p)
+    def Xbari_to_pow_poisson_series(self,i,p):
+        return self.synthetic_secular_theory.Xbari_to_pow_poisson_series(i,p)
+    def Yi_to_pow_poisson_series(self,i,p):
+        return self.synthetic_secular_theory.Yi_to_pow_poisson_series(i,p)
+    def Ybari_to_pow_poisson_series(self,i,p):
+        return self.synthetic_secular_theory.Ybari_to_pow_poisson_series(i,p)
+    @property
+    def N_freq(self):
+        return self.synthetic_secular_theory.N_freq
+    
+    @property
+    def omega_vector(self):
+        return np.array(self.synthetic_secular_theory.omega_vector)
+        
+    def _pows_to_series_inner_perturber(self,i,k3,k4,k5,k6,nu1,nu2,nu3,nu4):
+        _p  = lambda k,nu: max(0,k) + nu
+        _p1 = lambda k,nu: max(0,-k) + nu 
+        xpow_series = self.x_to_pow_poisson_series(_p(k4,nu4))
+        xbar_pow_series = self.xbar_to_pow_poisson_series(_p1(k4,nu4))
+        Xi_pow_series = self.Xi_to_pow_poisson_series(i,_p(k3,nu3))
+        Xbari_pow_series = self.Xbari_to_pow_poisson_series(i,_p1(k3,nu3))
+        ypow_series = self.y_to_pow_poisson_series(_p(k6,nu2))
+        ybar_pow_series = self.ybar_to_pow_poisson_series(_p1(k6,nu2))
+        Yi_pow_series = self.Yi_to_pow_poisson_series(i,_p(k5,nu1))
+        Ybari_pow_series = self.Ybari_to_pow_poisson_series(i,_p1(k5,nu1))
+        series = xpow_series * xbar_pow_series * Xi_pow_series * Xbari_pow_series * ypow_series * ybar_pow_series * Yi_pow_series * Ybari_pow_series
+        return series
+        
+    def _pows_to_series_outer_perturber(self,i,k3,k4,k5,k6,nu1,nu2,nu3,nu4):
+        _p  = lambda k,nu: max(0,k) + nu
+        _p1 = lambda k,nu: max(0,-k) + nu 
+        xpow_series = self.x_to_pow_poisson_series(_p(k3,nu3))
+        xbar_pow_series = self.xbar_to_pow_poisson_series(_p1(k3,nu3))
+        Xi_pow_series = self.Xi_to_pow_poisson_series(i, _p(k4,nu4))
+        Xbari_pow_series = self.Xbari_to_pow_poisson_series(i, _p1(k4,nu4))
+        ypow_series = self.y_to_pow_poisson_series(_p(k5,nu1))
+        ybar_pow_series = self.ybar_to_pow_poisson_series(_p1(k5,nu1))
+        Yi_pow_series = self.Yi_to_pow_poisson_series(i,_p(k6,nu2))
+        Ybari_pow_series = self.Ybari_to_pow_poisson_series(i,_p1(k6,nu2))
+        series = xpow_series * xbar_pow_series * Xi_pow_series * Xbari_pow_series * ypow_series * ybar_pow_series * Yi_pow_series * Ybari_pow_series
+        return series
+    
+    def _second_order_mass_terms_inner_perturber(self,i,j,k,max_order = None, eccentricities=True, inclinations=True):
+        resonance_terms = list_resonance_terms(j,k,max_order = max_order,eccentricities=eccentricities, inclinations=inclinations)
+        m_i = self.synthetic_secular_theory.masses[i]
+        a_i = self.synthetic_secular_theory.semi_major_axes[i]
+        alpha = a_i / self.semi_major_axis
+        Pk_dict = defaultdict(lambda: PoissonSeries(2,self.N_freq))
+        dPk_ddelta_dict = defaultdict(lambda: PoissonSeries(2,self.N_freq))
+        nvec = self.n * np.array((1,alpha**(-1.5)))
+        Lambda0 = np.sqrt(self.semi_major_axis)
+        for k,nu in resonance_terms:
+            k_tp,k_p,k3,k4,k5,k6 = k
+            nu1,nu2,nu3,nu4 = nu
+            C = evaluate_df_coefficient_dict(df_coefficient_C(*k,*nu),alpha)
+            dC_ddelta = evaluate_df_coefficient_dict(df_coefficient_C(*k,*nu,l2 = 1),alpha)
+            kvec = (k_tp,k_p)
+            pseries = self._pows_to_series_inner_perturber(i,k3,k4,k5,k6,nu1,nu2,nu3,nu4)
+            Pk_dict[kvec] += (0.5)**(2*nu2+abs(k6)) * C * pseries
+            dPk_ddelta_dict[kvec] += (0.5)**(2*nu2+abs(k6)) * dC_ddelta * pseries
+        terms = PoissonSeries(2,self.N_freq)
+        angle_only_term  = lambda u: (np.all(u.k==0) and np.all(u.kbar==0))
+        for kv in Pk_dict.keys():
+            k,k_p = kv
+            Pk = Pk_dict[kv]
+            dPk_ddelta =  dPk_ddelta_dict[kv]
+            omega = np.dot(kv,nvec)
+            abs_Pk_sq = Pk*Pk.conj
+            # assert DAlembert_check(abs_Pk_sq), "'abs_Pk_sq' fails D'Alembert property check"
+            d_absPk_sq_ddelta = (Pk*dPk_ddelta.conj + Pk.conj*dPk_ddelta)
+            # assert DAlembert_check(d_absPk_sq_ddelta), "'d_absPk_sq_ddelta' fails D'Alembert property check"
+            bracket_Pk_Pkbar = bracket(Pk,Pk.conj) 
+            # assert DAlembert_check(bracket_Pk_Pkbar), "'bracket_Pk_Pkbar' fails D'Alembert property check"
+            term = (1j/omega)*bracket_Pk_Pkbar + (-0.5*k/omega) * d_absPk_sq_ddelta + (-1.5*self.n*k*k/omega/omega)*abs_Pk_sq
+            
+            # clip terms that only depend on angles
+            term = PoissonSeries.from_PSTerms([x for x in term.terms if not angle_only_term(x)])
+            terms+=0.5*self.n*self.n*m_i*m_i*term
+        return terms + terms.conj
+    
+    def _second_order_mass_terms_outer_perturber(self,i,j,k,max_order = None, eccentricities=True, inclinations=True):
+        resonance_terms = list_resonance_terms(j,k,max_order = max_order,eccentricities=eccentricities, inclinations=inclinations)
+        m_i = self.synthetic_secular_theory.masses[i]
+        a_i = self.synthetic_secular_theory.semi_major_axes[i]
+        alpha = self.semi_major_axis / a_i 
+        Pk_dict = defaultdict(lambda: PoissonSeries(2,self.N_freq))
+        dPk_ddelta_dict = defaultdict(lambda: PoissonSeries(2,self.N_freq))
+        nvec = self.n * np.array((1,alpha**(+1.5)))
+        for k,nu in resonance_terms:
+            k_p,k_tp,k3,k4,k5,k6 = k
+            nu1,nu2,nu3,nu4 = nu
+            C = evaluate_df_coefficient_dict(df_coefficient_C(*k,*nu),alpha)
+            dC_ddelta = evaluate_df_coefficient_dict(df_coefficient_C(*k,*nu,l1 = 1),alpha)
+            kvec = (k_tp,k_p)
+            pseries = self._pows_to_series_outer_perturber(i,k3,k4,k5,k6,nu1,nu2,nu3,nu4)
+            Pk_dict[kvec] += (0.5)**(2*nu1+abs(k5)) * C * pseries
+            dPk_ddelta_dict[kvec] += (0.5)**(2*nu1+abs(k5)) * dC_ddelta * pseries
+        terms = PoissonSeries(2,self.N_freq)
+        angle_only_term  = lambda u: (np.all(u.k==0) and np.all(u.kbar==0))
+        for kv in Pk_dict.keys():
+            k,k_p = kv
+            Pk = Pk_dict[kv]
+            dPk_ddelta =  dPk_ddelta_dict[kv]
+            omega = np.dot(kv,nvec)
+            abs_Pk_sq = Pk*Pk.conj
+            d_absPk_sq_ddelta = (Pk*dPk_ddelta.conj + Pk.conj*dPk_ddelta)
+            term = (1j/omega)*bracket(Pk,Pk.conj) + (-0.5*k/omega) * d_absPk_sq_ddelta + (-1.5*self.n*k*k/omega/omega)*abs_Pk_sq
+            # clip terms that only depend on angles
+            term = PoissonSeries.from_PSTerms([x for x in term.terms if not angle_only_term(x)])
+            terms+=0.5*self.n*self.n*m_i*m_i*alpha*alpha*term
+        return terms + terms.conj
+                
+    def _DFTerm_poisson_series_inner_perturber(self,alpha,i,k,nu):
+        _p  = lambda k,nu: max(0,k) + nu
+        _p1 = lambda k,nu: max(0,-k) + nu 
+        m_i = self.synthetic_secular_theory.masses[i]
+        C = evaluate_df_coefficient_dict(df_coefficient_C(*k,*nu),alpha)
+        _,_,k3,k4,k5,k6 = k
+        nu1,nu2,nu3,nu4 = nu
+        factor = -(0.5)**(2*nu2+abs(k6)) * m_i * self.n * C
+        series = self._pows_to_series_inner_perturber(i,k3,k4,k5,k6,nu1,nu2,nu3,nu4)
+        series *= factor
+        return series + series.conj
+
+    def _DFTerm_poisson_series_outer_perturber(self,alpha,i,k,nu):
+        _p  = lambda k,nu: max(0,k) + nu
+        _p1 = lambda k,nu: max(0,-k) + nu 
+        m_i = self.synthetic_secular_theory.masses[i]
+        C = evaluate_df_coefficient_dict(df_coefficient_C(*k,*nu),alpha)
+        _,_,k3,k4,k5,k6 = k
+        nu1,nu2,nu3,nu4 = nu
+        factor = -(0.5)**(2*nu1+abs(k5)) * alpha * m_i * self.n * C
+        series = self._pows_to_series_outer_perturber(i,k3,k4,k5,k6,nu1,nu2,nu3,nu4)
+        series*= factor
+        return series + series.conj
+
+    def DFTerm_poisson_series(self,i,k,nu):
+        a_i = self.synthetic_secular_theory.semi_major_axes[i]
+        if a_i<self.semi_major_axis:
+            alpha = a_i / self.semi_major_axis
+            series = self._DFTerm_poisson_series_inner_perturber(alpha,i,k,nu)
+        else:
+            alpha = self.semi_major_axis/a_i
+            series = self._DFTerm_poisson_series_outer_perturber(alpha,i,k,nu)
+        return series
+    
+    def MMR_second_order_mass_terms(self,i,j,k,max_order = None, eccentricities=True, inclinations=True):
+        a_i = self.synthetic_secular_theory.semi_major_axes[i]
+        if a_i<self.semi_major_axis:
+            series = self._second_order_mass_terms_inner_perturber(i,j,k,max_order, eccentricities, inclinations)
+        else:
+            series = self._second_order_mass_terms_outer_perturber(i,j,k,max_order, eccentricities, inclinations)
+        return series
+
+    def x_to_pow_poisson_series(self,p):
+        pvec = qvec = np.zeros(self.omega_vector.size,dtype = int)
+        return PSTerm(1,[p,0],[0,0],pvec,qvec).as_series()
+    
+    def y_to_pow_poisson_series(self,p):
+        pvec = qvec = np.zeros(self.omega_vector.size,dtype = int)
+        return PSTerm(1,[0,p],[0,0],pvec,qvec).as_series()
+    
+    def xbar_to_pow_poisson_series(self,p):
+        return self.x_to_pow_poisson_series(p).conj
+    
+    def ybar_to_pow_poisson_series(self,p):
+        return self.y_to_pow_poisson_series(p).conj
